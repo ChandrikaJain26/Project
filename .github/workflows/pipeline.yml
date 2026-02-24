@@ -1,4 +1,4 @@
-name: Java CI + SonarCloud (Coverage)
+name: Java CI + SonarCloud (Coverage) + Docker to ACR
 
 on:
   push:
@@ -13,6 +13,9 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    env:
+      IMAGE_NAME: spring-petclinic
 
     steps:
       - name: Checkout code
@@ -40,3 +43,49 @@ jobs:
             -Dsonar.host.url=https://sonarcloud.io \
             -Dsonar.token=$SONAR_TOKEN \
             -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
+
+      # -------------------------------
+      # Docker Build + Tag + Push to ACR
+      # (Push ONLY on 'push', not on PR)
+      # -------------------------------
+
+      - name: Azure Login
+        if: github.event_name == 'push'
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Login to ACR
+        if: github.event_name == 'push'
+        run: az acr login --name ${{ secrets.ACR_NAME }}
+
+      - name: Generate Docker tags
+        if: github.event_name == 'push'
+        id: docker-tags
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          echo "sha_tag=sha-${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "run_tag=run-${GITHUB_RUN_NUMBER}" >> $GITHUB_OUTPUT
+          echo "branch_tag=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+
+      - name: Build, tag, and push image to ACR
+        if: github.event_name == 'push'
+        env:
+          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+          TAG_SHA: ${{ steps.docker-tags.outputs.sha_tag }}
+          TAG_RUN: ${{ steps.docker-tags.outputs.run_tag }}
+          TAG_BRANCH: ${{ steps.docker-tags.outputs.branch_tag }}
+        run: |
+          IMAGE_URI="${ACR_LOGIN_SERVER}/${IMAGE_NAME}"
+
+          docker build \
+            -t "${IMAGE_URI}:latest" \
+            -t "${IMAGE_URI}:${TAG_SHA}" \
+            -t "${IMAGE_URI}:${TAG_RUN}" \
+            -t "${IMAGE_URI}:${TAG_BRANCH}" \
+            .
+
+          docker push "${IMAGE_URI}:latest"
+          docker push "${IMAGE_URI}:${TAG_SHA}"
+          docker push "${IMAGE_URI}:${TAG_RUN}"
+          docker push "${IMAGE_URI}:${TAG_BRANCH}"
