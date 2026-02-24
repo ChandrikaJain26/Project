@@ -1,35 +1,45 @@
-name: Java CI (Maven) - Spring PetClinic
+name: Java CI + SonarCloud (Coverage)
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "master" ]
   pull_request:
-    branches: [ "main", "master" ]
+    branches: [ "master" ]
+
+permissions:
+  contents: read
+  pull-requests: read
 
 jobs:
-  build:
+  build-and-sonar:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout source
+      - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0  # recommended for better Sonar analysis relevance
 
-      - name: Set up Java 17
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: "temurin"
-          java-version: "17"
-          cache: "maven"
+          distribution: temurin
+          java-version: '17'
+          cache: maven
 
-      - name: Build & Test (Maven Wrapper)
-        run: |
-          chmod +x mvnw
-          ./mvnw -B clean verify
+      # ✅ This step runs tests AND generates JaCoCo report (jacoco.xml)
+      - name: Build & Test (Generate JaCoCo XML)
+        run: mvn -B clean verify
 
-      - name: Upload build artifact (JAR)
-        uses: actions/upload-artifact@v4
+      # ✅ Sonar scan (uploads coverage report to SonarCloud)
+      # Note: sonarcloud-github-action is deprecated; SonarSource recommends sonarqube-scan-action. [2](https://github.com/SonarSource/sonarcloud-github-action)[1](https://docs.sonarsource.com/sonarqube-cloud/advanced-setup/ci-based-analysis/github-actions-for-sonarcloud/)
+      - name: SonarQube Cloud Scan
+        uses: SonarSource/sonarqube-scan-action@v7
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
-          name: petclinic-jar
-          path: target/*.jar
+          args: >
+            -Dsonar.projectKey=spring-petclinic
+            -Dsonar.organization=chandrikajain26
+            -Dsonar.host.url=https://sonarcloud.io
+            -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
