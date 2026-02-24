@@ -11,14 +11,14 @@ permissions:
   pull-requests: read
 
 jobs:
-  build-and-sonar:
+  build:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # recommended for better Sonar analysis relevance
+          fetch-depth: 0
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -27,19 +27,15 @@ jobs:
           java-version: '17'
           cache: maven
 
-      # ✅ This step runs tests AND generates JaCoCo report (jacoco.xml)
-      - name: Build & Test (Generate JaCoCo XML)
+      - name: Build & Test (JaCoCo)
         run: mvn -B clean verify
 
-      # ✅ Sonar scan (uploads coverage report to SonarCloud)
-      # Note: sonarcloud-github-action is deprecated; SonarSource recommends sonarqube-scan-action. [2](https://github.com/SonarSource/sonarcloud-github-action)[1](https://docs.sonarsource.com/sonarqube-cloud/advanced-setup/ci-based-analysis/github-actions-for-sonarcloud/)
-      - name: SonarQube Cloud Scan
-        uses: SonarSource/sonarqube-scan-action@v7
+      - name: SonarCloud Scan (Maven)
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        with:
-          args: >
-            -Dsonar.projectKey=chandrikajain26_Project
-            -Dsonar.organization=chandrikajain26
-            -Dsonar.host.url=https://sonarcloud.io
-            -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
+        run: mvn -B sonar:sonar \
+          -Dsonar.projectKey=chandrikajain26_Project \
+          -Dsonar.organization=chandrikajain26 \
+          -Dsonar.host.url=https://sonarcloud.io \
+          -Dsonar.token=${SONAR_TOKEN} \
+          -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml
