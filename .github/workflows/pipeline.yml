@@ -1,4 +1,4 @@
-name: Java CI + SonarCloud (Coverage) + Docker to ACR
+name: Java CI + SonarCloud (Coverage) + Docker to ACR + Deploy to AKS
 
 on:
   push:
@@ -16,6 +16,8 @@ jobs:
 
     env:
       IMAGE_NAME: spring-petclinic
+      AKS_RESOURCE_GROUP: demo
+      AKS_CLUSTER_NAME: petclinic-aks
 
     steps:
       - name: Checkout code
@@ -89,3 +91,42 @@ jobs:
           docker push "${IMAGE_URI}:${TAG_SHA}"
           docker push "${IMAGE_URI}:${TAG_RUN}"
           docker push "${IMAGE_URI}:${TAG_BRANCH}"
+
+      # -------------------------------
+      # Deploy to AKS (ONLY on push)
+      # -------------------------------
+
+      - name: Set AKS context
+        if: github.event_name == 'push'
+        uses: azure/aks-set-context@v3
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          resource-group: ${{ env.AKS_RESOURCE_GROUP }}
+          cluster-name: ${{ env.AKS_CLUSTER_NAME }}
+
+      - name: Update image tag inside k8s/petclinic.yml (deploy immutable SHA tag)
+        if: github.event_name == 'push'
+        env:
+          ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+          TAG_SHA: ${{ steps.docker-tags.outputs.sha_tag }}
+        run: |
+          IMAGE_URI="${ACR_LOGIN_SERVER}/${IMAGE_NAME}:${TAG_SHA}"
+          echo "Deploying image: $IMAGE_URI"
+          sed -i "s|^\\s*image:\\s*.*|          image: ${IMAGE_URI}|g" k8s/petclinic.yml
+
+      - name: Apply Kubernetes manifests
+        if: github.event_name == 'push'
+        run: |
+          kubectl apply -f k8s/db.yml
+          kubectl apply -f k8s/petclinic.yml
+
+      - name: Wait for rollouts
+        if: github.event_name == 'push'
+        run: |
+          kubectl rollout status deployment/demo-db
+          kubectl rollout status deployment/petclinic
+
+      - name: Show service external IP (for verification)
+        if: github.event_name == 'push'
+        run: |
+          kubectl get svc petclinic -o wide
