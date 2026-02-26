@@ -35,7 +35,7 @@ spec:
             - sh
             - -c
             - |
-              until nc -z demo-db 5432; do
+              until nc -z demo-db.default.svc.cluster.local 5432; do
                 echo "waiting for db";
                 sleep 2;
               done
