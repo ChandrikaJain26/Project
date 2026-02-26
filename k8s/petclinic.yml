@@ -66,3 +66,10 @@ spec:
           ports:
             - name: http
               containerPort: 8080
+
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            initialDelaySeconds: 40
+            periodSeconds: 10
