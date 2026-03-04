@@ -174,3 +174,62 @@ jobs:
         if: github.event_name == 'push'
         run: |
           kubectl get svc petclinic -o wide
+
+      - name: DORA Metrics (auto-calc + store)
+        if: github.event_name == 'push'
+        run: |
+          set -e
+
+          # ---- 1) Collect timestamps ----
+          COMMIT_SHA="${GITHUB_SHA}"
+          COMMIT_TIME="$(git show -s --format=%cI ${GITHUB_SHA})"
+          DEPLOY_TIME="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
+          # ---- 2) Compute Lead Time (minutes) ----
+          # Convert ISO timestamps to epoch seconds
+          COMMIT_EPOCH=$(date -d "${COMMIT_TIME}" +%s)
+          DEPLOY_EPOCH=$(date -d "${DEPLOY_TIME}" +%s)
+          LEAD_TIME_MIN=$(( (DEPLOY_EPOCH - COMMIT_EPOCH) / 60 ))
+
+          # ---- 3) Determine deployment status ----
+          # If the job reached here, deployment + smoke test passed
+          STATUS="success"
+
+          echo "Commit: ${COMMIT_SHA}"
+          echo "Commit time: ${COMMIT_TIME}"
+          echo "Deploy time: ${DEPLOY_TIME}"
+          echo "Lead time (min): ${LEAD_TIME_MIN}"
+          echo "Status: ${STATUS}"
+
+          # ---- 4) Store event (CSV log) ----
+          mkdir -p metrics
+          METRICS_FILE="metrics/dora_deployments.csv"
+
+          if [ ! -f "${METRICS_FILE}" ]; then
+            echo "commit_sha,commit_time,deploy_time,lead_time_min,status" > "${METRICS_FILE}"
+          fi
+
+          echo "${COMMIT_SHA},${COMMIT_TIME},${DEPLOY_TIME},${LEAD_TIME_MIN},${STATUS}" >> "${METRICS_FILE}"
+
+          # ---- 5) Compute Deployment Frequency (last 7 days) ----
+          DEPLOYMENTS_7D=$(awk -F',' 'NR>1 {print $3}' "${METRICS_FILE}" | while read t; do date -d "$t" +%s; done | \
+            awk -v now="$(date -u +%s)" 'now-$1 <= 7*24*3600 {c++} END {print c+0}')
+          echo "Deployment Frequency (last 7 days): ${DEPLOYMENTS_7D}"
+
+          # ---- 6) Compute Change Failure Rate (last 20 deployments) ----
+          LAST20=$(tail -n 20 "${METRICS_FILE}" | tail -n +2)
+          TOTAL20=$(echo "${LAST20}" | wc -l | tr -d ' ')
+          FAIL20=$(echo "${LAST20}" | awk -F',' '$5=="failure"{c++} END {print c+0}')
+          if [ "${TOTAL20}" -gt 0 ]; then
+            CFR=$(awk -v f="${FAIL20}" -v t="${TOTAL20}" 'BEGIN {printf "%.2f", (f/t)*100}')
+          else
+            CFR="0.00"
+          fi
+          echo "Change Failure Rate (last ${TOTAL20}): ${CFR}%"
+
+      - name: Upload DORA metrics artifact
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dora-metrics
+          path: metrics/dora_deployments.csv
