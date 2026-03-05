@@ -233,3 +233,8 @@ jobs:
         with:
           name: dora-metrics
           path: metrics/dora_deployments.csv
+
+      - name: Apply Grafana Dashboards
+        run: |
+          kubectl apply -f monitoring/grafana-dashboard-petclinic.yml
+
