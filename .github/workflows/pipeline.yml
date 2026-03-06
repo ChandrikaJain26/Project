@@ -238,3 +238,8 @@ jobs:
         run: |
           kubectl apply -f monitoring/grafana-dashboard-petclinic.yml
 
+      - name: Force failure (test only)
+        run: |
+         exit 1
+
+
